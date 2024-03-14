@@ -27,6 +27,10 @@ func (t Timestamp) String() string {
 	return time.Time(t).String()
 }
 
+func (t Timestamp) Time() time.Time {
+	return time.Time(t)
+}
+
 func main() {
 	// connection string
 	psqlconn := fmt.Sprintf(
@@ -51,7 +55,10 @@ func main() {
 
 	fmt.Println("Connected!")
 
-	GetBinanceKlineData("ETHUSDT", "1h", "10")
+	klines := GetBinanceKlineData("ETHUSDT", "1h", "10")
+
+	InsertKlinesTable("ETHUSDT", "S", klines, db)
+
 }
 
 type Kline struct {
@@ -114,9 +121,7 @@ func (k *Kline) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-func GetBinanceKlineData(symbol, interval, limit string) {
-	// get data
-	// https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=80
+func GetBinanceKlineData(symbol, interval, limit string) []Kline {
 	urlSpot := url.URL{
 		Scheme: "https",
 		Host:   "api.binance.com",
@@ -150,18 +155,12 @@ func GetBinanceKlineData(symbol, interval, limit string) {
 		log.Println("Error unmarshal response body: ", err)
 	}
 
-	for _, kline := range klines {
-		log.Printf(
-			"Datetime: %s, Close: %f",
-			kline.KlinesDatetime,
-			kline.Close,
-		)
-	}
-
+	return klines
 }
+
 func CreateKlinesTable(db *sql.DB) {
 	// create table
-	createTb := `CREATE TABLE IF NOT EXISTS Klines (
+	createTb := `CREATE TABLE IF NOT EXISTS klines (
             datetime TIMESTAMP NOT NULL,
             symbol varchar(30) NOT NULL,
             type varchar(1) NOT NULL,
@@ -181,6 +180,53 @@ func CreateKlinesTable(db *sql.DB) {
 
 	_, err := db.Exec(createTb)
 	CheckError(err)
+}
+
+func InsertKlinesTable(symbol string, contract string, klines []Kline, db *sql.DB) {
+	for _, kline := range klines {
+		insertStmt := `insert into 
+        "klines"("datetime", 
+                 "symbol", 
+                 "type", 
+                 "open", 
+                 "high", 
+                 "low", 
+                 "close", 
+                 "volume", 
+                 "close_time",  
+                 "quote_asset_volume", 
+                 "nr_of_trades", 
+                 "taker_buy_base_asset_volume",
+                 "taker_buy_quote_asset_volume",
+                 "ignore") 
+        values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (datetime, symbol, type)
+        DO UPDATE SET open = $4, high = $5, low = $6, close = $7, volume = $8, close_time = $9, 
+        quote_asset_volume = $10, nr_of_trades = $11, 
+        taker_buy_base_asset_volume = $12, taker_buy_quote_asset_volume = $13, ignore = $14;`
+
+		_, err := db.Exec(
+			insertStmt,
+			kline.KlinesDatetime.Time(),
+			symbol,
+			contract,
+			kline.Open,
+			kline.High,
+			kline.Low,
+			kline.Close,
+			kline.Volume,
+			kline.CloseTime.Time(),
+			kline.QuoteAssetVolume,
+			kline.NrOfTrades,
+			kline.TakerBuyBaseAssetVolume,
+			kline.TakerBuyQuoteAssetVolume,
+			0,
+		)
+
+		if err != nil {
+			log.Panicln("Error inserting kline: ", err)
+		}
+	}
 }
 
 func CheckError(err error) {
