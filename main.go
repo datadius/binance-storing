@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -55,10 +56,79 @@ func main() {
 
 	fmt.Println("Connected!")
 
-	klines := GetBinanceKlineData("ETHUSDT", "1h", "10")
+	symbols := GetSymbols()
 
-	InsertKlinesTable("ETHUSDT", "S", klines, db)
+	for _, symbol := range symbols {
+		fmt.Println(symbol, time.Now())
+		klines := GetBinanceKlineData(symbol, "1h", "2")
 
+		InsertKlinesTable(symbol, "F", "1h", klines, db)
+	}
+
+}
+
+func GetSymbols() []string {
+	urlSpot := url.URL{
+		Scheme: "https",
+		Host:   "fapi.binance.com",
+		Path:   "/fapi/v1/ticker/24hr",
+	}
+
+	var req *http.Response
+	req, err := http.Get(urlSpot.String())
+
+	if err != nil {
+		log.Println("Error symbols get request: ", err)
+	}
+
+	responseBody, err := io.ReadAll(req.Body)
+
+	if err != nil {
+		log.Println("Read response body: ", err)
+	}
+	if req.StatusCode >= 400 && req.StatusCode <= 500 {
+		log.Println("Error response. Status Code: ", req.StatusCode)
+		log.Println("Response Body: ", string(responseBody))
+	}
+
+	var symbols []Symbol
+	err = json.Unmarshal(responseBody, &symbols)
+	if err != nil {
+		log.Println("Error unmarshal response body: ", err)
+	}
+
+	var symbolsFiltered []string
+	for _, symbol := range symbols {
+		quoteVolume, err := strconv.ParseFloat(symbol.QuoteVolume, 8)
+		if err != nil {
+			log.Println("Error parsing quote volume: ", err)
+		}
+		if quoteVolume > 1e6 && strings.HasSuffix(symbol.Symbol, "USDT") {
+			symbolsFiltered = append(symbolsFiltered, symbol.Symbol)
+		}
+	}
+
+	return symbolsFiltered
+
+}
+
+type Symbol struct {
+	Symbol             string  `json:"symbol"`
+	PriceChange        string  `json:"priceChange"`
+	PriceChangePercent string  `json:"priceChangePercent"`
+	WeightedAvgPrice   string  `json:"weightedAvgPrice"`
+	LastPrice          string  `json:"lastPrice"`
+	LastQty            string  `json:"lastQty"`
+	OpenPrice          string  `json:"openPrice"`
+	HighPrice          string  `json:"highPrice"`
+	LowPrice           string  `json:"lowPrice"`
+	Volume             string  `json:"volume"`
+	QuoteVolume        string  `json:"quoteVolume"`
+	OpenTime           float64 `json:"openTime"`
+	CloseTime          float64 `json:"closeTime"`
+	FirstId            int     `json:"firstId"`
+	LastId             int     `json:"lastId"`
+	Count              int     `json:"count"`
 }
 
 type Kline struct {
@@ -124,8 +194,8 @@ func (k *Kline) UnmarshalJSON(p []byte) error {
 func GetBinanceKlineData(symbol, interval, limit string) []Kline {
 	urlSpot := url.URL{
 		Scheme: "https",
-		Host:   "api.binance.com",
-		Path:   "/api/v3/klines"}
+		Host:   "fapi.binance.com",
+		Path:   "/fapi/v1/klines"}
 	q := urlSpot.Query()
 	q.Set("symbol", symbol)
 	q.Set("interval", interval)
@@ -164,6 +234,7 @@ func CreateKlinesTable(db *sql.DB) {
             datetime TIMESTAMP NOT NULL,
             symbol varchar(30) NOT NULL,
             type varchar(1) NOT NULL,
+            interval varchar(3) NOT NULL,
             open numeric(17,8) NOT NULL,
             high numeric(17,8) NOT NULL,
             low numeric(17,8) NOT NULL,
@@ -175,19 +246,26 @@ func CreateKlinesTable(db *sql.DB) {
             taker_buy_base_asset_volume numeric(17,8),
             taker_buy_quote_asset_volume numeric(17,8),
             ignore int,
-            PRIMARY KEY (datetime,symbol,type)
+            PRIMARY KEY (datetime,symbol,type, interval)
         );`
 
 	_, err := db.Exec(createTb)
 	CheckError(err)
 }
 
-func InsertKlinesTable(symbol string, contract string, klines []Kline, db *sql.DB) {
+func InsertKlinesTable(
+	symbol string,
+	contract string,
+	interval string,
+	klines []Kline,
+	db *sql.DB,
+) {
 	for _, kline := range klines {
 		insertStmt := `insert into 
         "klines"("datetime", 
                  "symbol", 
                  "type", 
+                 "interval",
                  "open", 
                  "high", 
                  "low", 
@@ -199,31 +277,53 @@ func InsertKlinesTable(symbol string, contract string, klines []Kline, db *sql.D
                  "taker_buy_base_asset_volume",
                  "taker_buy_quote_asset_volume",
                  "ignore") 
-        values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-        ON CONFLICT (datetime, symbol, type)
-        DO UPDATE SET open = $4, high = $5, low = $6, close = $7, volume = $8, close_time = $9, 
-        quote_asset_volume = $10, nr_of_trades = $11, 
-        taker_buy_base_asset_volume = $12, taker_buy_quote_asset_volume = $13, ignore = $14;`
+        values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        ON CONFLICT (datetime, symbol, type, interval)
+        DO UPDATE SET open = $5, high = $6, low = $7, close = $8, volume = $9, close_time = $10, 
+        quote_asset_volume = $11, nr_of_trades = $12, 
+        taker_buy_base_asset_volume = $13, taker_buy_quote_asset_volume = $14, ignore = $15;`
 
-		_, err := db.Exec(
+		//_, err := db.Exec(
+		//	insertStmt,
+		//	kline.KlinesDatetime.Time(),
+		//	symbol,
+		//	contract,
+		//	interval,
+		//	kline.Open,
+		//	kline.High,
+		//	kline.Low,
+		//	kline.Close,
+		//	kline.Volume,
+		//	kline.CloseTime.Time(),
+		//	kline.QuoteAssetVolume,
+		//	kline.NrOfTrades,
+		//	kline.TakerBuyBaseAssetVolume,
+		//	kline.TakerBuyQuoteAssetVolume,
+		//	0,
+		//)
+
+		result, err := db.Exec(
 			insertStmt,
 			kline.KlinesDatetime.Time(),
 			symbol,
 			contract,
+			interval,
 			kline.Open,
 			kline.High,
 			kline.Low,
 			kline.Close,
 			kline.Volume,
 			kline.CloseTime.Time(),
-			kline.QuoteAssetVolume,
-			kline.NrOfTrades,
-			kline.TakerBuyBaseAssetVolume,
-			kline.TakerBuyQuoteAssetVolume,
+			0,
+			0,
+			0,
+			0,
 			0,
 		)
 
 		if err != nil {
+			log.Println("Error while inserting the kline: ", kline)
+			log.Println("Error Result: ", result)
 			log.Panicln("Error inserting kline: ", err)
 		}
 	}
