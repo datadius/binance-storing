@@ -56,14 +56,17 @@ func main() {
 
 	fmt.Println("Connected!")
 
-	symbols := GetSymbols()
+	//symbols := GetSymbols()
 
-	for _, symbol := range symbols {
-		fmt.Println(symbol, time.Now())
-		klines := GetBinanceKlineData(symbol, "1h", "2")
+	// for _, symbol := range symbols {
+	// 	fmt.Println(symbol, time.Now())
+	// 	klines := GetBinanceKlineData(symbol, "1h", "2")
 
-		InsertKlinesTable(symbol, "F", "1h", klines, db)
-	}
+	// 	InsertKlinesTable(symbol, "F", "1h", klines, db)
+	// }
+	klines := GetBinanceKlineData("1000PEPEUSDT", "1h", "2")
+
+	InsertKlinesTable("1000PEPEUSDT", "F", "1h", klines, db)
 
 }
 
@@ -169,7 +172,7 @@ func (k *Kline) UnmarshalJSON(p []byte) error {
 	if err != nil {
 		log.Println("Error parsing close  ", err, tmp)
 	}
-	k.Volume, err = strconv.ParseFloat(tmp[5].(string), 64)
+	k.Volume, err = strconv.ParseFloat(tmp[5].(string), 32)
 	if err != nil {
 		log.Println("Error parsing volume  ", err, tmp)
 	}
