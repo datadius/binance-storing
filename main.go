@@ -61,19 +61,20 @@ func main() {
 
 	symbols := GetSymbols()
 
-	for _, symbol := range symbols {
-		fmt.Println(symbol, time.Now())
-		klines := GetBinanceKlineData(symbol, "1h", "1000")
+	// Check if data is not already there
+	//for _, symbol := range symbols {
+	//	fmt.Println(symbol, time.Now())
+	//	klines := GetBinanceKlineData(symbol, "1h", "1000")
 
-		InsertKlinesTable(symbol, "F", "1h", klines, db)
-	}
+	//	InsertKlinesTable(symbol, "F", "1h", klines, db)
+	//}
 
 	scheduler, err := gocron.NewScheduler()
 	if err != nil {
 		log.Println("Error creating scheduler: ", err)
 	}
 
-	job, err := scheduler.NewJob(gocron.CronJob("*/5 * * * *", false), gocron.NewTask(func() {
+	job, err := scheduler.NewJob(gocron.CronJob("0 * * * *", false), gocron.NewTask(func() {
 		for _, symbol := range symbols {
 			fmt.Println(symbol, time.Now())
 			klines := GetBinanceKlineData(symbol, "1h", "2")
@@ -89,7 +90,7 @@ func main() {
 
 	log.Println("Starting cron job ", job.ID())
 
-	job_4h, err := scheduler.NewJob(gocron.CronJob("*/5 * * * *", false), gocron.NewTask(func() {
+	job_4h, err := scheduler.NewJob(gocron.CronJob("0 */4 * * *", false), gocron.NewTask(func() {
 		for _, symbol := range symbols {
 			fmt.Println(symbol, time.Now())
 			klines := GetBinanceKlineData(symbol, "4h", "2")
@@ -283,23 +284,24 @@ func GetBinanceKlineData(symbol, interval, limit string) []Kline {
 
 func CreateKlinesTable(db *sql.DB) {
 	// create table
-	createTb := `CREATE TABLE IF NOT EXISTS klines (
-            datetime TIMESTAMP NOT NULL,
-            symbol varchar(30) NOT NULL,
-            type varchar(1) NOT NULL,
-            interval varchar(3) NOT NULL,
-            open numeric(17,8) NOT NULL,
-            high numeric(17,8) NOT NULL,
-            low numeric(17,8) NOT NULL,
-            close numeric(17,8) NOT NULL,
-            volume numeric(17,8),
-            close_time TIMESTAMP,
-            quote_asset_volume numeric(17,8),
-            nr_of_trades int,
-            taker_buy_base_asset_volume numeric(17,8),
-            taker_buy_quote_asset_volume numeric(17,8),
-            ignore int,
-            PRIMARY KEY (datetime,symbol,type, interval)
+	createTb := `
+        CREATE TABLE IF NOT EXISTS Klines (
+        datetime TIMESTAMP NOT NULL,
+        symbol varchar(30) NOT NULL,
+        type varchar(1) NOT NULL,
+        interval varchar(3) NOT NULL,
+        open numeric(32,8) NOT NULL,
+        high numeric(32,8) NOT NULL,
+        low numeric(32,8) NOT NULL,
+        close numeric(32,8) NOT NULL,
+        volume numeric(32,8),
+        close_time TIMESTAMP,
+        quote_asset_volume numeric(32,8),
+        nr_of_trades int,
+        taker_buy_base_asset_volume numeric(32,8),
+        taker_buy_quote_asset_volume numeric(32,8),
+        ignore int,
+        PRIMARY KEY (datetime,symbol,type, interval)
         );`
 
 	_, err := db.Exec(createTb)
@@ -313,8 +315,7 @@ func InsertKlinesTable(
 	klines []Kline,
 	db *sql.DB,
 ) {
-	for _, kline := range klines {
-		insertStmt := `insert into 
+	insertStmt := `insert into 
         "klines"("datetime", 
                  "symbol", 
                  "type", 
@@ -336,8 +337,14 @@ func InsertKlinesTable(
         quote_asset_volume = $11, nr_of_trades = $12, 
         taker_buy_base_asset_volume = $13, taker_buy_quote_asset_volume = $14, ignore = $15;`
 
-		result, err := db.Exec(
-			insertStmt,
+	stmt, err := db.Prepare(insertStmt)
+
+	if err != nil {
+		log.Println("Error preparing statement ", err)
+	}
+
+	for _, kline := range klines {
+		result, err := stmt.Exec(
 			kline.KlinesDatetime.Time(),
 			symbol,
 			contract,
