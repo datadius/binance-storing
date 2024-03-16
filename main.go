@@ -4,14 +4,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/go-co-op/gocron/v2"
 	_ "github.com/lib/pq"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -56,18 +59,65 @@ func main() {
 
 	fmt.Println("Connected!")
 
-	//symbols := GetSymbols()
+	symbols := GetSymbols()
 
-	// for _, symbol := range symbols {
-	// 	fmt.Println(symbol, time.Now())
-	// 	klines := GetBinanceKlineData(symbol, "1h", "2")
+	for _, symbol := range symbols {
+		fmt.Println(symbol, time.Now())
+		klines := GetBinanceKlineData(symbol, "1h", "1000")
 
-	// 	InsertKlinesTable(symbol, "F", "1h", klines, db)
-	// }
-	klines := GetBinanceKlineData("1000PEPEUSDT", "1h", "2")
+		InsertKlinesTable(symbol, "F", "1h", klines, db)
+	}
 
-	InsertKlinesTable("1000PEPEUSDT", "F", "1h", klines, db)
+	scheduler, err := gocron.NewScheduler()
+	if err != nil {
+		log.Println("Error creating scheduler: ", err)
+	}
 
+	job, err := scheduler.NewJob(gocron.CronJob("*/5 * * * *", false), gocron.NewTask(func() {
+		for _, symbol := range symbols {
+			fmt.Println(symbol, time.Now())
+			klines := GetBinanceKlineData(symbol, "1h", "2")
+			InsertKlinesTable(symbol, "F", "1h", klines, db)
+		}
+
+		symbols = GetSymbols()
+	}))
+
+	if err != nil {
+		log.Println("Error creating job: ", err)
+	}
+
+	log.Println("Starting cron job ", job.ID())
+
+	job_4h, err := scheduler.NewJob(gocron.CronJob("*/5 * * * *", false), gocron.NewTask(func() {
+		for _, symbol := range symbols {
+			fmt.Println(symbol, time.Now())
+			klines := GetBinanceKlineData(symbol, "4h", "2")
+			InsertKlinesTable(symbol, "F", "4h", klines, db)
+		}
+	}))
+
+	if err != nil {
+		log.Println("Error creating job: ", err)
+	}
+
+	log.Println("Starting cron job ", job_4h.ID())
+
+	scheduler.Start()
+
+	// block until you are ready to shut down
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
+	log.Println("Blocking, press ctrl+c to exit...")
+	select {
+	case <-done:
+	}
+
+	// when you're done, shut it down
+	err = scheduler.Shutdown()
+	if err != nil {
+		// handle error
+	}
 }
 
 func GetSymbols() []string {
@@ -286,25 +336,6 @@ func InsertKlinesTable(
         quote_asset_volume = $11, nr_of_trades = $12, 
         taker_buy_base_asset_volume = $13, taker_buy_quote_asset_volume = $14, ignore = $15;`
 
-		//_, err := db.Exec(
-		//	insertStmt,
-		//	kline.KlinesDatetime.Time(),
-		//	symbol,
-		//	contract,
-		//	interval,
-		//	kline.Open,
-		//	kline.High,
-		//	kline.Low,
-		//	kline.Close,
-		//	kline.Volume,
-		//	kline.CloseTime.Time(),
-		//	kline.QuoteAssetVolume,
-		//	kline.NrOfTrades,
-		//	kline.TakerBuyBaseAssetVolume,
-		//	kline.TakerBuyQuoteAssetVolume,
-		//	0,
-		//)
-
 		result, err := db.Exec(
 			insertStmt,
 			kline.KlinesDatetime.Time(),
@@ -317,10 +348,10 @@ func InsertKlinesTable(
 			kline.Close,
 			kline.Volume,
 			kline.CloseTime.Time(),
-			0,
-			0,
-			0,
-			0,
+			kline.QuoteAssetVolume,
+			kline.NrOfTrades,
+			kline.TakerBuyBaseAssetVolume,
+			kline.TakerBuyQuoteAssetVolume,
 			0,
 		)
 
