@@ -74,6 +74,8 @@ func main() {
 		log.Println("Error creating scheduler: ", err)
 	}
 
+	// */5 * * * *
+	// 0 * * * *
 	job, err := scheduler.NewJob(gocron.CronJob("0 * * * *", false), gocron.NewTask(func() {
 		for _, symbol := range symbols {
 			fmt.Println(symbol, time.Now())
@@ -81,6 +83,7 @@ func main() {
 			InsertKlinesTable(symbol, "F", "1h", klines, db)
 		}
 
+		DeleteKlinesOldKlines("1h", "999", db)
 		symbols = GetSymbols()
 	}))
 
@@ -96,6 +99,7 @@ func main() {
 			klines := GetBinanceKlineData(symbol, "4h", "2")
 			InsertKlinesTable(symbol, "F", "4h", klines, db)
 		}
+		DeleteKlinesOldKlines("4h", "3999", db)
 	}))
 
 	if err != nil {
@@ -119,6 +123,29 @@ func main() {
 	if err != nil {
 		// handle error
 	}
+}
+
+func DeleteKlinesOldKlines(interval string, hours string, db *sql.DB) {
+	// delete old klines
+	deleteOldKlinesStmt := fmt.Sprintf(
+		`DELETE FROM Klines WHERE interval='%s' and datetime < now() - interval '%s hours'`,
+		interval,
+		hours,
+	)
+	stmt, err := db.Prepare(deleteOldKlinesStmt)
+
+	if err != nil {
+		log.Println("Error for creating statement ", interval, err)
+	}
+
+	res, err := stmt.Exec()
+
+	if err != nil {
+		log.Println("Error for deleting rows ", interval, err)
+	}
+
+	log.Println("Result from deletion ", interval, hours, res)
+
 }
 
 func GetSymbols() []string {
