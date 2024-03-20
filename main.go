@@ -18,13 +18,6 @@ import (
 	"time"
 )
 
-const (
-	host   = "localhost"
-	port   = 5432
-	user   = "postgres"
-	dbname = "binanceklines"
-)
-
 type Timestamp time.Time
 
 func (t Timestamp) String() string {
@@ -39,11 +32,11 @@ func main() {
 	// connection string
 	psqlconn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		host,
-		port,
-		user,
-		os.Getenv("POSTGRES_PASSWORD"),
-		dbname,
+		os.Getenv("PGHOST"),
+		38290,
+		os.Getenv("PGUSER"),
+		os.Getenv("PGPASSWORD"),
+		"railway",
 	)
 
 	// open database
@@ -59,15 +52,20 @@ func main() {
 
 	fmt.Println("Connected!")
 
+	CreateKlinesTable(db)
+
 	symbols := GetSymbols()
 
 	// Check if data is not already there
-	//for _, symbol := range symbols {
-	//	fmt.Println(symbol, time.Now())
-	//	klines := GetBinanceKlineData(symbol, "1h", "1000")
+	for _, symbol := range symbols {
+		fmt.Println(symbol, time.Now())
 
-	//	InsertKlinesTable(symbol, "F", "1h", klines, db)
-	//}
+		klines := GetBinanceKlineData(symbol, "1h", "1000")
+		InsertKlinesTable(symbol, "F", "1h", klines, db)
+
+		klines = GetBinanceKlineData(symbol, "4h", "1000")
+		InsertKlinesTable(symbol, "F", "4h", klines, db)
+	}
 
 	scheduler, err := gocron.NewScheduler()
 	if err != nil {
@@ -121,7 +119,7 @@ func main() {
 	// when you're done, shut it down
 	err = scheduler.Shutdown()
 	if err != nil {
-		// handle error
+		log.Println("Error shutting down scheduler: ", err)
 	}
 }
 
