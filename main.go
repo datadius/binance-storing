@@ -56,8 +56,11 @@ func main() {
 
 	symbols := GetSymbols()
 
-	// Check if data is not already there
-	for _, symbol := range symbols {
+	symbolsKlinesTable := GetSymbolsSliceFromKlinesTable(db)
+
+	diffSymbols := Difference(symbols, symbolsKlinesTable)
+
+	for _, symbol := range diffSymbols {
 		fmt.Println(symbol, time.Now())
 
 		klines := GetBinanceKlineData(symbol, "1h", "1000")
@@ -178,11 +181,7 @@ func GetSymbols() []string {
 
 	var symbolsFiltered []string
 	for _, symbol := range symbols {
-		quoteVolume, err := strconv.ParseFloat(symbol.QuoteVolume, 8)
-		if err != nil {
-			log.Println("Error parsing quote volume: ", err)
-		}
-		if quoteVolume > 1e6 && strings.HasSuffix(symbol.Symbol, "USDT") {
+		if strings.HasSuffix(symbol.Symbol, "USDT") {
 			symbolsFiltered = append(symbolsFiltered, symbol.Symbol)
 		}
 	}
@@ -393,6 +392,48 @@ func InsertKlinesTable(
 			log.Panicln("Error inserting kline: ", err)
 		}
 	}
+}
+
+func GetSizeOfKlinesTable(db *sql.DB) int {
+	var size int
+	err := db.QueryRow("SELECT COUNT(*) FROM Klines").Scan(&size)
+	if err != nil {
+		log.Println("Error getting size of table: ", err)
+	}
+	return size
+}
+
+func GetSymbolsSliceFromKlinesTable(db *sql.DB) []string {
+	var symbols []string
+	rows, err := db.Query("SELECT DISTINCT symbol FROM Klines WHERE interval = '1h'")
+	if err != nil {
+		log.Println("Error getting symbols: ", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var symbol string
+		err := rows.Scan(&symbol)
+		if err != nil {
+			log.Println("Error getting individual symbol: ", err)
+		}
+		symbols = append(symbols, symbol)
+	}
+	return symbols
+}
+
+func Difference(a, b []string) (diff []string) {
+	m := make(map[string]bool)
+
+	for _, item := range b {
+		m[item] = true
+	}
+
+	for _, item := range a {
+		if _, ok := m[item]; !ok {
+			diff = append(diff, item)
+		}
+	}
+	return
 }
 
 func CheckError(err error) {
