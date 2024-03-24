@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-co-op/gocron/v2"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"io"
 	"log"
 	"net/http"
@@ -63,11 +63,9 @@ func main() {
 	for _, symbol := range diffSymbols {
 		fmt.Println(symbol, time.Now())
 
-		klines := GetBinanceKlineData(symbol, "1h", "1000")
-		InsertKlinesTable(symbol, "F", "1h", klines, db)
+		BulkInsertKlinesRequests("F", "1h", symbols, "1000", db)
 
-		klines = GetBinanceKlineData(symbol, "4h", "1000")
-		InsertKlinesTable(symbol, "F", "4h", klines, db)
+		BulkInsertKlinesRequests("F", "4h", symbols, "1000", db)
 	}
 
 	scheduler, err := gocron.NewScheduler()
@@ -78,12 +76,7 @@ func main() {
 	// */5 * * * *
 	// 0 * * * *
 	job, err := scheduler.NewJob(gocron.CronJob("0 * * * *", false), gocron.NewTask(func() {
-		for _, symbol := range symbols {
-			fmt.Println(symbol, time.Now())
-			klines := GetBinanceKlineData(symbol, "1h", "2")
-			InsertKlinesTable(symbol, "F", "1h", klines, db)
-		}
-
+		BulkInsertKlinesRequests("F", "1h", symbols, "2", db)
 		DeleteKlinesOldKlines("1h", "999", db)
 		symbols = GetSymbols()
 	}))
@@ -95,11 +88,7 @@ func main() {
 	log.Println("Starting cron job ", job.ID())
 
 	job_4h, err := scheduler.NewJob(gocron.CronJob("0 */4 * * *", false), gocron.NewTask(func() {
-		for _, symbol := range symbols {
-			fmt.Println(symbol, time.Now())
-			klines := GetBinanceKlineData(symbol, "4h", "2")
-			InsertKlinesTable(symbol, "F", "4h", klines, db)
-		}
+		BulkInsertKlinesRequests("F", "4h", symbols, "2", db)
 		DeleteKlinesOldKlines("4h", "3999", db)
 	}))
 
@@ -334,6 +323,8 @@ func InsertKlinesTable(
 	klines []Kline,
 	db *sql.DB,
 ) {
+	//https://pkg.go.dev/github.com/lib/pq#hdr-Bulk_imports
+	//Look into having bulk imports
 	insertStmt := `insert into 
         "klines"("datetime", 
                  "symbol", 
@@ -381,6 +372,85 @@ func InsertKlinesTable(
 			log.Panicln("Error inserting kline: ", err)
 		}
 	}
+}
+
+func BulkInsertKlinesRequests(
+	contract string,
+	interval string,
+	symbols []string,
+	size string,
+	db *sql.DB) {
+	txn, err := db.Begin()
+
+	if err != nil {
+		log.Println("Failed to prepare transaction: ", err)
+	}
+
+	stmt, _ := txn.Prepare(
+		pq.CopyIn(
+			"klines",
+			"datetime",
+			"symbol",
+			"type",
+			"interval",
+			"open",
+			"high",
+			"low",
+			"close",
+			"volume",
+			"close_time",
+			"quote_asset_volume",
+			"nr_of_trades",
+			"taker_buy_base_asset_volume",
+			"taker_buy_quote_asset_volume",
+			"ignore",
+		),
+	)
+
+	for _, symbol := range symbols {
+		fmt.Println(symbol, time.Now())
+		klines := GetBinanceKlineData(symbol, interval, size)
+		for _, kline := range klines {
+			_, err = stmt.Exec(
+				kline.KlinesDatetime.Time(),
+				symbol,
+				contract,
+				interval,
+				kline.Open,
+				kline.High,
+				kline.Low,
+				kline.Close,
+				kline.Volume,
+				kline.CloseTime.Time(),
+				kline.QuoteAssetVolume,
+				kline.NrOfTrades,
+				kline.TakerBuyBaseAssetVolume,
+				kline.TakerBuyQuoteAssetVolume,
+				0,
+			)
+
+			if err != nil {
+				log.Println("Error while inserting the kline: ", kline)
+				log.Panicln("Error inserting kline: ", err)
+			}
+		}
+	}
+
+	_, err = stmt.Exec()
+	if err != nil {
+		log.Panicln("Error executing bulk insert: ", err)
+	}
+
+	err = stmt.Close()
+	if err != nil {
+		log.Panicln("Error closing statement: ", err)
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		log.Panicln("Error committing transaction: ", err)
+	}
+
 }
 
 func GetSizeOfKlinesTable(db *sql.DB) int {
