@@ -133,13 +133,8 @@ func DeleteKlinesOldKlines(interval string, hours string, db *sql.DB) {
 		interval,
 		hours,
 	)
-	stmt, err := db.Prepare(deleteOldKlinesStmt)
 
-	if err != nil {
-		log.Println("Error for creating statement ", interval, err)
-	}
-
-	res, err := stmt.Exec()
+	res, err := db.Exec(deleteOldKlinesStmt)
 
 	if err != nil {
 		log.Println("Error for deleting rows ", interval, err)
@@ -361,14 +356,8 @@ func InsertKlinesTable(
         quote_asset_volume = $11, nr_of_trades = $12, 
         taker_buy_base_asset_volume = $13, taker_buy_quote_asset_volume = $14, ignore = $15;`
 
-	stmt, err := db.Prepare(insertStmt)
-
-	if err != nil {
-		log.Println("Error preparing statement ", err)
-	}
-
 	for _, kline := range klines {
-		result, err := stmt.Exec(
+		result, err := db.Exec(insertStmt,
 			kline.KlinesDatetime.Time(),
 			symbol,
 			contract,
