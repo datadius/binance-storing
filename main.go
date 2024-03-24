@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-co-op/gocron/v2"
-	"github.com/lib/pq"
+	_ "github.com/lib/pq"
 	"io"
 	"log"
 	"net/http"
@@ -389,26 +389,27 @@ func BulkInsertKlinesRequests(
 		log.Println("Failed to prepare transaction: ", err)
 	}
 
-	stmt, _ := txn.Prepare(
-		pq.CopyIn(
-			"klines",
-			"datetime",
-			"symbol",
-			"type",
-			"interval",
-			"open",
-			"high",
-			"low",
-			"close",
-			"volume",
-			"close_time",
-			"quote_asset_volume",
-			"nr_of_trades",
-			"taker_buy_base_asset_volume",
-			"taker_buy_quote_asset_volume",
-			"ignore",
-		),
-	)
+	stmt, _ := txn.Prepare(`insert into 
+        "klines"("datetime", 
+                 "symbol", 
+                 "type", 
+                 "interval",
+                 "open", 
+                 "high", 
+                 "low", 
+                 "close", 
+                 "volume", 
+                 "close_time",  
+                 "quote_asset_volume", 
+                 "nr_of_trades", 
+                 "taker_buy_base_asset_volume",
+                 "taker_buy_quote_asset_volume",
+                 "ignore") 
+        values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        ON CONFLICT (datetime, symbol, type, interval)
+        DO UPDATE SET open = $5, high = $6, low = $7, close = $8, volume = $9, close_time = $10, 
+        quote_asset_volume = $11, nr_of_trades = $12, 
+        taker_buy_base_asset_volume = $13, taker_buy_quote_asset_volume = $14, ignore = $15;`)
 
 	for _, symbol := range symbols {
 		fmt.Println(symbol, time.Now())
@@ -437,11 +438,6 @@ func BulkInsertKlinesRequests(
 				log.Panicln("Error inserting kline: ", err)
 			}
 		}
-	}
-
-	_, err = stmt.Exec()
-	if err != nil {
-		log.Panicln("Error executing bulk insert: ", err)
 	}
 
 	err = stmt.Close()
