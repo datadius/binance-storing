@@ -18,6 +18,10 @@ import (
 	"time"
 )
 
+/////////////////////////////////////////////////
+// IF MEMORY BECOMES A PROBLEM RUN DEALLOCATE ALL;
+/////////////////////////////////////////////////
+
 type Timestamp time.Time
 
 func (t Timestamp) String() string {
@@ -60,12 +64,11 @@ func main() {
 
 	diffSymbols := Difference(symbols, symbolsKlinesTable)
 
-	for _, symbol := range diffSymbols {
-		fmt.Println(symbol, time.Now())
+	if len(diffSymbols) > 0 {
 
-		BulkInsertKlinesRequests("F", "1h", symbols, "1000", db)
+		BulkInsertKlinesRequests("F", "1h", diffSymbols, "1000", db)
 
-		BulkInsertKlinesRequests("F", "4h", symbols, "1000", db)
+		BulkInsertKlinesRequests("F", "4h", diffSymbols, "1000", db)
 	}
 
 	scheduler, err := gocron.NewScheduler()
