@@ -151,6 +151,7 @@ func GetSymbols() []string {
 	}
 
 	responseBody, err := io.ReadAll(req.Body)
+	_ = req.Body.Close()
 
 	if err != nil {
 		log.Println("Read response body: ", err)
@@ -275,6 +276,7 @@ func GetBinanceKlineData(symbol, interval, limit string) []Kline {
 	}
 
 	responseBody, err := io.ReadAll(req.Body)
+	_ = req.Body.Close()
 
 	if err != nil {
 		log.Println("Read response body: ", err)
