@@ -414,7 +414,6 @@ func BulkInsertKlinesRequests(
         taker_buy_base_asset_volume = $13, taker_buy_quote_asset_volume = $14, ignore = $15;`)
 
 	for _, symbol := range symbols {
-		fmt.Println(symbol, time.Now())
 		klines := GetBinanceKlineData(symbol, interval, size)
 		for _, kline := range klines {
 			_, err = stmt.Exec(
