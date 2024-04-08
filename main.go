@@ -56,9 +56,13 @@ func main() {
 
 	fmt.Println("Connected!")
 
+	var klineClient = &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
 	CreateKlinesTable(db)
 
-	symbols := GetSymbols()
+	symbols := GetSymbols(klineClient)
 
 	symbolsKlinesTable := GetSymbolsSliceFromKlinesTable(db)
 
@@ -66,9 +70,9 @@ func main() {
 
 	if len(diffSymbols) > 0 {
 
-		BulkInsertKlinesRequests("F", "1h", diffSymbols, "1000", db)
+		BulkInsertKlinesRequests(klineClient, "F", "1h", diffSymbols, "1000", db)
 
-		BulkInsertKlinesRequests("F", "4h", diffSymbols, "1000", db)
+		BulkInsertKlinesRequests(klineClient, "F", "4h", diffSymbols, "1000", db)
 	}
 
 	scheduler, err := gocron.NewScheduler()
@@ -79,9 +83,9 @@ func main() {
 	// */5 * * * *
 	// 0 * * * *
 	job, err := scheduler.NewJob(gocron.CronJob("0 * * * *", false), gocron.NewTask(func() {
-		BulkInsertKlinesRequests("F", "1h", symbols, "2", db)
+		BulkInsertKlinesRequests(klineClient, "F", "1h", symbols, "2", db)
 		DeleteKlinesOldKlines("1h", "999", db)
-		symbols = GetSymbols()
+		symbols = GetSymbols(klineClient)
 	}))
 
 	if err != nil {
@@ -91,7 +95,7 @@ func main() {
 	log.Println("Starting cron job ", job.ID())
 
 	job_4h, err := scheduler.NewJob(gocron.CronJob("0 */4 * * *", false), gocron.NewTask(func() {
-		BulkInsertKlinesRequests("F", "4h", symbols, "2", db)
+		BulkInsertKlinesRequests(klineClient, "F", "4h", symbols, "2", db)
 		DeleteKlinesOldKlines("4h", "3999", db)
 	}))
 
@@ -136,7 +140,7 @@ func DeleteKlinesOldKlines(interval string, hours string, db *sql.DB) {
 
 }
 
-func GetSymbols() []string {
+func GetSymbols(client *http.Client) []string {
 	urlSpot := url.URL{
 		Scheme: "https",
 		Host:   "fapi.binance.com",
@@ -144,7 +148,7 @@ func GetSymbols() []string {
 	}
 
 	var req *http.Response
-	req, err := http.Get(urlSpot.String())
+	req, err := client.Get(urlSpot.String())
 
 	if err != nil {
 		log.Println("Error symbols get request: ", err)
@@ -257,7 +261,7 @@ func (k *Kline) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-func GetBinanceKlineData(symbol, interval, limit string) []Kline {
+func GetBinanceKlineData(client *http.Client, symbol, interval, limit string) []Kline {
 	urlSpot := url.URL{
 		Scheme: "https",
 		Host:   "fapi.binance.com",
@@ -269,7 +273,7 @@ func GetBinanceKlineData(symbol, interval, limit string) []Kline {
 	urlSpot.RawQuery = q.Encode()
 
 	var req *http.Response
-	req, err := http.Get(urlSpot.String())
+	req, err := client.Get(urlSpot.String())
 
 	if err != nil {
 		log.Println("Error get request: ", err)
@@ -380,6 +384,7 @@ func InsertKlinesTable(
 }
 
 func BulkInsertKlinesRequests(
+	client *http.Client,
 	contract string,
 	interval string,
 	symbols []string,
@@ -414,7 +419,7 @@ func BulkInsertKlinesRequests(
         taker_buy_base_asset_volume = $13, taker_buy_quote_asset_volume = $14, ignore = $15;`)
 
 	for _, symbol := range symbols {
-		klines := GetBinanceKlineData(symbol, interval, size)
+		klines := GetBinanceKlineData(client, symbol, interval, size)
 		for _, kline := range klines {
 			_, err = stmt.Exec(
 				kline.KlinesDatetime.Time(),
