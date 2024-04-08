@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/go-co-op/gocron/v2"
-	_ "github.com/lib/pq"
 	"io"
 	"log"
 	"net/http"
@@ -14,8 +12,12 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"github.com/go-co-op/gocron/v2"
+	_ "github.com/lib/pq"
 )
 
 /////////////////////////////////////////////////
@@ -120,6 +122,75 @@ func main() {
 	if err != nil {
 		log.Println("Error shutting down scheduler: ", err)
 	}
+}
+
+type Job struct {
+	Symbol string
+}
+
+type SymbolKlines struct {
+	Symbol string
+	Klines []Kline
+}
+
+func worker(
+	client *http.Client,
+	jobs <-chan Job,
+	interval string,
+	size string,
+	results chan<- SymbolKlines,
+	wg *sync.WaitGroup,
+) {
+	for job := range jobs {
+		symbolKlines := GetBinanceKlineData(client, job.Symbol, interval, size)
+		results <- symbolKlines
+		wg.Done()
+	}
+}
+
+func GetSymbolKlines(
+	client *http.Client,
+	symbols []string,
+	interval string,
+	size string,
+	numWorkers int,
+) []SymbolKlines {
+
+	jobs := make(chan Job, len(symbols))
+	results := make(chan SymbolKlines, len(symbols))
+
+	var wg sync.WaitGroup
+
+	for w := 0; w < numWorkers; w++ {
+		go func(
+			client *http.Client,
+			jobs <-chan Job,
+			interval string,
+			size string,
+			results chan<- SymbolKlines,
+			wg *sync.WaitGroup,
+		) {
+			for job := range jobs {
+				symbolKlines := GetBinanceKlineData(client, job.Symbol, interval, size)
+				results <- symbolKlines
+				wg.Done()
+			}
+		}(client, jobs, interval, size, results, &wg)
+	}
+
+	wg.Add(len(symbols))
+	for _, symbol := range symbols {
+		jobs <- Job{Symbol: symbol}
+	}
+	close(jobs)
+	wg.Wait()
+
+	var symbolKlines []SymbolKlines
+	for i := 0; i < len(symbols); i++ {
+		symbolKlines = append(symbolKlines, <-results)
+	}
+
+	return symbolKlines
 }
 
 func DeleteKlinesOldKlines(interval string, hours string, db *sql.DB) {
@@ -261,7 +332,7 @@ func (k *Kline) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-func GetBinanceKlineData(client *http.Client, symbol, interval, limit string) []Kline {
+func GetBinanceKlineData(client *http.Client, symbol, interval, limit string) SymbolKlines {
 	urlSpot := url.URL{
 		Scheme: "https",
 		Host:   "fapi.binance.com",
@@ -296,7 +367,7 @@ func GetBinanceKlineData(client *http.Client, symbol, interval, limit string) []
 		log.Println("Error unmarshal response body: ", err)
 	}
 
-	return klines
+	return SymbolKlines{symbol, klines}
 }
 
 func CreateKlinesTable(db *sql.DB) {
@@ -390,6 +461,8 @@ func BulkInsertKlinesRequests(
 	symbols []string,
 	size string,
 	db *sql.DB) {
+	symbolsKlines := GetSymbolKlines(client, symbols, interval, size, 3)
+
 	txn, err := db.Begin()
 
 	if err != nil {
@@ -418,12 +491,11 @@ func BulkInsertKlinesRequests(
         quote_asset_volume = $11, nr_of_trades = $12, 
         taker_buy_base_asset_volume = $13, taker_buy_quote_asset_volume = $14, ignore = $15;`)
 
-	for _, symbol := range symbols {
-		klines := GetBinanceKlineData(client, symbol, interval, size)
-		for _, kline := range klines {
+	for _, symbol := range symbolsKlines {
+		for _, kline := range symbol.Klines {
 			_, err = stmt.Exec(
 				kline.KlinesDatetime.Time(),
-				symbol,
+				symbol.Symbol,
 				contract,
 				interval,
 				kline.Open,
