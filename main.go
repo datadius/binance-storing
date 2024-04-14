@@ -77,6 +77,9 @@ func main() {
 		BulkInsertKlinesRequests(klineClient, "F", "4h", diffSymbols, "1000", db)
 	}
 
+	BulkInsertKlinesRequests(klineClient, "F", "1h", symbols, "2", db)
+	BulkInsertKlinesRequests(klineClient, "F", "4h", symbols, "2", db)
+
 	scheduler, err := gocron.NewScheduler()
 	if err != nil {
 		log.Println("Error creating scheduler: ", err)
@@ -84,7 +87,7 @@ func main() {
 
 	// */5 * * * *
 	// 0 * * * *
-	job, err := scheduler.NewJob(gocron.CronJob("0 * * * *", false), gocron.NewTask(func() {
+	job, err := scheduler.NewJob(gocron.CronJob("5 0 * * * *", true), gocron.NewTask(func() {
 		BulkInsertKlinesRequests(klineClient, "F", "1h", symbols, "2", db)
 		DeleteKlinesOldKlines("1h", "999", db)
 		symbols = GetSymbols(klineClient)
@@ -96,7 +99,7 @@ func main() {
 
 	log.Println("Starting cron job ", job.ID())
 
-	job_4h, err := scheduler.NewJob(gocron.CronJob("0 */4 * * *", false), gocron.NewTask(func() {
+	job_4h, err := scheduler.NewJob(gocron.CronJob("5 0 */4 * * *", true), gocron.NewTask(func() {
 		BulkInsertKlinesRequests(klineClient, "F", "4h", symbols, "2", db)
 		DeleteKlinesOldKlines("4h", "3999", db)
 	}))
@@ -510,6 +513,14 @@ func BulkInsertKlinesRequests(
 				kline.TakerBuyQuoteAssetVolume,
 				0,
 			)
+
+			if kline.KlinesDatetime.Time().Hour() != time.Now().Hour() {
+				log.Printf(
+					"Error while inserting the kline: %s\n wrong time %v",
+					symbol.Symbol,
+					kline.KlinesDatetime.Time(),
+				)
+			}
 
 			if err != nil {
 				log.Println("Error while inserting the kline: ", kline)
