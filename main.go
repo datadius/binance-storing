@@ -502,6 +502,8 @@ func BulkInsertKlinesRequests(
 	for _, symbol := range symbolsKlines {
 		count := 0
 		for _, kline := range symbol.Klines {
+			count += 1
+
 			_, err = stmt.Exec(
 				kline.KlinesDatetime.Time(),
 				symbol.Symbol,
@@ -534,7 +536,6 @@ func BulkInsertKlinesRequests(
 				log.Panicln("Error inserting kline: ", err)
 			}
 
-			count += 1
 		}
 	}
 
