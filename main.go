@@ -465,6 +465,11 @@ func BulkInsertKlinesRequests(
 	size string,
 	db *sql.DB) {
 	symbolsKlines := GetSymbolKlines(client, symbols, interval, size, 3)
+	limit, err := strconv.Atoi(size)
+
+	if err != nil {
+		log.Println("Error converting string size to int: ", err)
+	}
 
 	txn, err := db.Begin()
 
@@ -495,6 +500,7 @@ func BulkInsertKlinesRequests(
         taker_buy_base_asset_volume = $13, taker_buy_quote_asset_volume = $14, ignore = $15;`)
 
 	for _, symbol := range symbolsKlines {
+		count := 0
 		for _, kline := range symbol.Klines {
 			_, err = stmt.Exec(
 				kline.KlinesDatetime.Time(),
@@ -514,7 +520,8 @@ func BulkInsertKlinesRequests(
 				0,
 			)
 
-			if kline.KlinesDatetime.Time().Hour() != time.Now().Hour() {
+			if count == limit &&
+				kline.KlinesDatetime.Time().Hour() != time.Now().Hour() {
 				log.Printf(
 					"Error while inserting the kline: %s\n wrong time %v",
 					symbol.Symbol,
@@ -526,6 +533,8 @@ func BulkInsertKlinesRequests(
 				log.Println("Error while inserting the kline: ", kline)
 				log.Panicln("Error inserting kline: ", err)
 			}
+
+			count += 1
 		}
 	}
 
