@@ -84,7 +84,7 @@ func main() {
 
 	// */5 * * * *
 	// 0 * * * *
-	job, err := scheduler.NewJob(gocron.CronJob("0 * * * *", false), gocron.NewTask(func() {
+	job, err := scheduler.NewJob(gocron.CronJob("10 0 * * * *", false), gocron.NewTask(func() {
 		BulkInsertKlinesRequests(klineClient, "F", "1h", symbols, "2", db)
 		DeleteKlinesOldKlines("1h", "999", db)
 		symbols = GetSymbols(klineClient)
@@ -96,7 +96,7 @@ func main() {
 
 	log.Println("Starting cron job ", job.ID())
 
-	job_4h, err := scheduler.NewJob(gocron.CronJob("0 */4 * * *", false), gocron.NewTask(func() {
+	job_4h, err := scheduler.NewJob(gocron.CronJob("10 0 */4 * * *", false), gocron.NewTask(func() {
 		BulkInsertKlinesRequests(klineClient, "F", "4h", symbols, "2", db)
 		DeleteKlinesOldKlines("4h", "3999", db)
 	}))
