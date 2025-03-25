@@ -39,11 +39,12 @@ func main() {
 	psqlconn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		os.Getenv("PGHOST"),
-		38290,
+		5432,
 		os.Getenv("PGUSER"),
 		os.Getenv("PGPASSWORD"),
 		"railway",
 	)
+    psqlconn = os.Getenv("DATABASE_PRIVATE_URL")
 
 	// open database
 	db, err := sql.Open("postgres", psqlconn)
