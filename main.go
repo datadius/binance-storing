@@ -75,10 +75,13 @@ func main() {
 		BulkInsertKlinesRequests(klineClient, "F", "1h", diffSymbols, "1000", db)
 
 		BulkInsertKlinesRequests(klineClient, "F", "4h", diffSymbols, "1000", db)
+
+		BulkInsertKlinesRequests(klineClient, "F", "1d", diffSymbols, "1000", db)
 	}
 
 	BulkInsertKlinesRequests(klineClient, "F", "1h", symbols, "2", db)
 	BulkInsertKlinesRequests(klineClient, "F", "4h", symbols, "2", db)
+	BulkInsertKlinesRequests(klineClient, "F", "1d", symbols, "2", db)
 
 	scheduler, err := gocron.NewScheduler()
 	if err != nil {
@@ -109,6 +112,17 @@ func main() {
 	}
 
 	log.Println("Starting cron job ", job_4h.ID())
+
+	job_1d, err := scheduler.NewJob(gocron.CronJob("10 0 0 * * *", true), gocron.NewTask(func() {
+		BulkInsertKlinesRequests(klineClient, "F", "1d", symbols, "2", db)
+		DeleteKlinesOldKlines("1d", "23999", db)
+	}))
+
+	if err != nil {
+		log.Println("Error creating job: ", err)
+	}
+
+	log.Println("Starting cron job ", job_1d.ID())
 
 	scheduler.Start()
 
