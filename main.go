@@ -44,7 +44,7 @@ func main() {
 		os.Getenv("PGPASSWORD"),
 		"railway",
 	)
-    psqlconn = os.Getenv("DATABASE_PRIVATE_URL")
+	psqlconn = os.Getenv("DATABASE_PRIVATE_URL")
 
 	// open database
 	db, err := sql.Open("postgres", psqlconn)
@@ -577,7 +577,7 @@ func GetSizeOfKlinesTable(db *sql.DB) int {
 
 func GetSymbolsSliceFromKlinesTable(db *sql.DB) []string {
 	var symbols []string
-	rows, err := db.Query("SELECT DISTINCT symbol FROM Klines WHERE interval = '1h'")
+	rows, err := db.Query("SELECT DISTINCT symbol FROM Klines WHERE interval = '1d'")
 	if err != nil {
 		log.Println("Error getting symbols: ", err)
 	}
