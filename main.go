@@ -479,6 +479,9 @@ func BulkInsertKlinesRequests(
 	symbols []string,
 	size string,
 	db *sql.DB) {
+
+	log.Println("Inserting for interval: ", interval)
+
 	symbolsKlines := GetSymbolKlines(client, symbols, interval, size, 3)
 	limit, err := strconv.Atoi(size)
 
